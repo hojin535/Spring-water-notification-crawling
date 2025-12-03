@@ -1,7 +1,7 @@
 """
 SQLAlchemy 데이터베이스 모델
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -82,6 +82,9 @@ class ViolationExplanationCache(Base):
     
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     
+    # violations 테이블 참조 (FK) - API 직접 호출 시에는 NULL 가능
+    violation_id = Column(Integer, ForeignKey('violations.id', ondelete='CASCADE'), nullable=True, index=True, comment='violations 테이블 ID (있는 경우)')
+    
     # 캐시 키 (해시값으로 저장)
     cache_key = Column(String(64), nullable=False, unique=True, index=True, comment='처분명+위반내용의 해시값')
     
@@ -99,7 +102,7 @@ class ViolationExplanationCache(Base):
     access_count = Column(Integer, default=0, comment='사용 횟수')
     
     def __repr__(self):
-        return f"<ViolationExplanationCache(cache_key={self.cache_key}, access_count={self.access_count})>"
+        return f"<ViolationExplanationCache(violation_id={self.violation_id}, cache_key={self.cache_key}, access_count={self.access_count})>"
 
 
 class EmailSubscriber(Base):

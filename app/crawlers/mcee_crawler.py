@@ -131,7 +131,8 @@ def get_violation_detail(url: str) -> Dict:
             # 위반내용 추출 (p 태그에서)
             violation_content_title = soup.find('p', class_='fw500', string=lambda text: text and '위반내용' in text)
             if violation_content_title and violation_content_title.find_next_sibling('p'):
-                violation_content = violation_content_title.find_next_sibling('p').get_text(strip=True)
+                # separator='\n'를 사용하여 줄바꿈 유지
+                violation_content = violation_content_title.find_next_sibling('p').get_text(separator='\n', strip=True)
                 detail_data['위반내용'] = violation_content
             else:
                 detail_data['위반내용'] = ""

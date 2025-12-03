@@ -144,32 +144,16 @@ def crawl_and_save_to_db():
             
             # 삭제 실행
             deleted_count = 0
-            cache_deleted_count = 0
             
             for record in records_to_delete:
-                # AI 캐시 삭제 (처분명과 위반내용이 있는 경우에만)
-                if record.처분명 and record.위반내용:
-                    try:
-                        cache_key = generate_cache_key(record.처분명, record.위반내용)
-                        cache_entry = db.query(ViolationExplanationCache).filter(
-                            ViolationExplanationCache.cache_key == cache_key
-                        ).first()
-                        
-                        if cache_entry:
-                            db.delete(cache_entry)
-                            cache_deleted_count += 1
-                            logger.debug(f"Deleted cache entry for: {record.업체명}")
-                    except Exception as cache_error:
-                        logger.warning(f"Failed to delete cache for {record.업체명}: {cache_error}")
-                
-                # DB 레코드 삭제
+                # DB 레코드 삭제 (캐시는 FK CASCADE로 자동 삭제됨)
                 db.delete(record)
                 deleted_count += 1
                 logger.info(f"Deleted expired record: {record.업체명} - {record.처분일자} (board_id: {record.board_id})")
             
             if deleted_count > 0:
                 db.commit()
-                logger.info(f"Cleanup completed. Deleted {deleted_count} violation records, {cache_deleted_count} cache entries")
+                logger.info(f"Cleanup completed. Deleted {deleted_count} violation records (cache auto-deleted via CASCADE)")
             else:
                 logger.info("No expired records found. All data is up to date.")
             

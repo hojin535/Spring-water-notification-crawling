@@ -126,9 +126,9 @@ SQLALCHEMY_DATABASE_URL = get_database_url()
 # 엔진 생성
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    pool_pre_ping=True,  # 연결 유효성 검사
-    pool_recycle=3600,   # 1시간마다 연결 재생성
-    echo=False  # SQL 쿼리 로깅 (개발 시 True로 설정)
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    connect_args={"connect_timeout": 10}
 )
 
 # 세션 팩토리

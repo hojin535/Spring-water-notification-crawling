@@ -100,3 +100,54 @@ class ViolationExplanationCache(Base):
     
     def __repr__(self):
         return f"<ViolationExplanationCache(cache_key={self.cache_key}, access_count={self.access_count})>"
+
+
+class EmailSubscriber(Base):
+    """이메일 구독자 테이블"""
+    __tablename__ = "email_subscribers"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    
+    # 이메일 정보
+    email = Column(String(255), nullable=False, unique=True, index=True, comment='구독자 이메일 주소')
+    
+    # 구독 상태
+    is_active = Column(Integer, default=0, comment='구독 활성화 여부 (0: 비활성, 1: 활성)')
+    subscription_token = Column(String(64), unique=True, index=True, comment='구독 확인 토큰')
+    unsubscribe_token = Column(String(64), unique=True, index=True, comment='구독 취소 토큰')
+    
+    # 일시 정보
+    subscribed_at = Column(DateTime(timezone=True), server_default=func.now(), comment='구독 신청일시')
+    confirmed_at = Column(DateTime(timezone=True), nullable=True, comment='이메일 인증 완료일시')
+    last_notified_at = Column(DateTime(timezone=True), nullable=True, comment='마지막 알림 발송일시')
+    unsubscribed_at = Column(DateTime(timezone=True), nullable=True, comment='구독 취소일시')
+    
+    # 메타 정보
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    def __repr__(self):
+        return f"<EmailSubscriber(email={self.email}, is_active={self.is_active})>"
+
+
+class NotificationHistory(Base):
+    """알림 발송 기록 테이블"""
+    __tablename__ = "notification_history"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    
+    # 관계
+    subscriber_id = Column(Integer, nullable=False, index=True, comment='구독자 ID')
+    violation_id = Column(Integer, nullable=False, index=True, comment='위반 ID')
+    
+    # 알림 정보
+    email_subject = Column(String(500), comment='이메일 제목')
+    email_sent_at = Column(DateTime(timezone=True), server_default=func.now(), comment='이메일 발송일시')
+    is_success = Column(Integer, default=1, comment='발송 성공 여부 (0: 실패, 1: 성공)')
+    error_message = Column(Text, nullable=True, comment='발송 실패 시 에러 메시지')
+    
+    # 메타 정보
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    def __repr__(self):
+        return f"<NotificationHistory(subscriber_id={self.subscriber_id}, violation_id={self.violation_id})>"

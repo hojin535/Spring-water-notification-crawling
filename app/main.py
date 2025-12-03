@@ -12,17 +12,21 @@ from sqlalchemy import desc
 import logging
 import re
 import os
+import secrets
 
 from app.models.violation import ViolationListItem, ViolationDetail
 from app.models.explain import ExplainRequest, ExplainResponse, TermExplanation
+from app.models.subscription import SubscribeRequest, SubscribeResponse, UnsubscribeResponse
 from app.crawlers.mcee_crawler import (
     get_violation_list,
     get_all_violations_with_details,
     get_violation_by_board_id
 )
 from app.database import get_db, init_db
-from app.db_models import ViolationRecord, TermMapping, ViolationExplanationCache
+from app.db_models import ViolationRecord, TermMapping, ViolationExplanationCache, EmailSubscriber
 from app.services.ai_explainer import get_explainer
+from app.services.email_service import email_service
+from app.services.notification_service import notification_service
 
 
 # 로깅 설정
@@ -37,6 +41,7 @@ scheduler = BackgroundScheduler()
 
 # 환경 변수
 CRAWL_ON_STARTUP = os.getenv('CRAWL_ON_STARTUP', 'false').lower() == 'true'
+NOTIFICATION_ENABLED = os.getenv('NOTIFICATION_ENABLED', 'true').lower() == 'true'
 
 
 def extract_board_id(url: str) -> str:
@@ -167,6 +172,15 @@ def crawl_and_save_to_db():
                 logger.info(f"Cleanup completed. Deleted {deleted_count} violation records, {cache_deleted_count} cache entries")
             else:
                 logger.info("No expired records found. All data is up to date.")
+            
+            # 새로운 위반 감지 및 알림 발송
+            if NOTIFICATION_ENABLED:
+                logger.info("Checking for new violations and sending notifications...")
+                try:
+                    notification_result = notification_service.process_new_violations(db)
+                    logger.info(f"Notification result: {notification_result}")
+                except Exception as notify_error:
+                    logger.error(f"Error sending notifications: {notify_error}", exc_info=True)
             
             
         except Exception as e:
@@ -471,6 +485,320 @@ async def explain_violation(
         raise HTTPException(
             status_code=500,
             detail=f"설명 생성 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+# =================================================
+# 이메일 구독 API
+# =================================================
+
+@app.post("/api/subscribe", response_model=SubscribeResponse)
+async def subscribe_email(
+    request: SubscribeRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    이메일 구독 신청
+    
+    Args:
+        request: 이메일 주소
+        
+    Returns:
+        SubscribeResponse: 구독 신청 결과
+    """
+    logger.info(f"POST /api/subscribe - email: {request.email}")
+    
+    try:
+        # 이미 구독 중인지 확인
+        existing = db.query(EmailSubscriber).filter(
+            EmailSubscriber.email == request.email
+        ).first()
+        
+        if existing:
+            if existing.is_active == 1:
+                return SubscribeResponse(
+                    status="already_subscribed",
+                    message="이미 구독 중인 이메일입니다.",
+                    email=request.email
+                )
+            else:
+                # 비활성 상태인 경우 토큰 재생성 및 확인 이메일 재발송
+                existing.subscription_token = secrets.token_urlsafe(32)
+                existing.subscribed_at = datetime.now()
+                db.commit()
+                
+                # 확인 이메일 발송
+                email_service.send_subscription_confirmation(
+                    email=request.email,
+                    token=existing.subscription_token
+                )
+                
+                return SubscribeResponse(
+                    status="resent",
+                    message="확인 이메일을 재발송했습니다. 이메일을 확인해주세요.",
+                    email=request.email
+                )
+        
+        # 새로운 구독자 생성
+        subscription_token = secrets.token_urlsafe(32)
+        unsubscribe_token = secrets.token_urlsafe(32)
+        
+        new_subscriber = EmailSubscriber(
+            email=request.email,
+            is_active=0,  # 이메일 확인 전에는 비활성
+            subscription_token=subscription_token,
+            unsubscribe_token=unsubscribe_token
+        )
+        
+        db.add(new_subscriber)
+        db.commit()
+        
+        # 확인 이메일 발송
+        email_sent = email_service.send_subscription_confirmation(
+            email=request.email,
+            token=subscription_token
+        )
+        
+        if email_sent:
+            return SubscribeResponse(
+                status="success",
+                message="구독 확인 이메일을 발송했습니다. 이메일을 확인해주세요.",
+                email=request.email
+            )
+        else:
+            # 이메일 발송 실패 시 DB에서 삭제
+            db.delete(new_subscriber)
+            db.commit()
+            raise HTTPException(
+                status_code=500,
+                detail="이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요."
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error subscribing email: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"구독 처리 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@app.get("/api/subscribe/confirm/{token}")
+async def confirm_subscription(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    이메일 구독 확인
+    
+    Args:
+        token: 구독 확인 토큰
+        
+    Returns:
+        확인 결과 메시지
+    """
+    logger.info(f"GET /api/subscribe/confirm/{token[:10]}...")
+    
+    try:
+        subscriber = db.query(EmailSubscriber).filter(
+            EmailSubscriber.subscription_token == token
+        ).first()
+        
+        if not subscriber:
+            raise HTTPException(
+                status_code=404,
+                detail="유효하지 않은 구독 확인 링크입니다."
+            )
+        
+        if subscriber.is_active == 1:
+            return {
+                "status": "already_confirmed",
+                "message": "이미 구독이 확인된 이메일입니다.",
+                "email": subscriber.email
+            }
+        
+        # 구독 활성화
+        subscriber.is_active = 1
+        subscriber.confirmed_at = datetime.now()
+        db.commit()
+        
+        logger.info(f"Email subscription confirmed: {subscriber.email}")
+        
+        return {
+            "status": "success",
+            "message": "구독이 확인되었습니다! 새로운 위반이 발견되면 이메일로 알림을 보내드립니다.",
+            "email": subscriber.email
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming subscription: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"구독 확인 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@app.get("/api/unsubscribe/{token}", response_model=UnsubscribeResponse)
+async def unsubscribe_email(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    이메일 구독 취소
+    
+    Args:
+        token: 구독 취소 토큰
+        
+    Returns:
+        UnsubscribeResponse: 구독 취소 결과
+    """
+    logger.info(f"GET /api/unsubscribe/{token[:10]}...")
+    
+    try:
+        subscriber = db.query(EmailSubscriber).filter(
+            EmailSubscriber.unsubscribe_token == token
+        ).first()
+        
+        if not subscriber:
+            raise HTTPException(
+                status_code=404,
+                detail="유효하지 않은 구독 취소 링크입니다."
+            )
+        
+        if subscriber.unsubscribed_at:
+            return UnsubscribeResponse(
+                status="already_unsubscribed",
+                message="이미 구독이 취소된 이메일입니다."
+            )
+        
+        # 구독 취소
+        subscriber.is_active = 0
+        subscriber.unsubscribed_at = datetime.now()
+        db.commit()
+        
+        logger.info(f"Email subscription cancelled: {subscriber.email}")
+        
+        return UnsubscribeResponse(
+            status="success",
+            message="구독이 취소되었습니다. 더 이상 알림을 받지 않습니다."
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unsubscribing: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"구독 취소 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@app.post("/api/test-email")
+async def send_test_email():
+    """
+    테스트 이메일 발송 (본인에게)
+    
+    SMTP 설정이 올바른지 확인하기 위해 본인 이메일로 테스트 이메일을 발송합니다.
+    
+    Returns:
+        발송 결과
+    """
+    logger.info("POST /api/test-email - Sending test email")
+    
+    try:
+        # 환경 변수에서 이메일 주소 가져오기
+        test_email = os.getenv('SMTP_FROM_EMAIL') or os.getenv('SMTP_USERNAME')
+        
+        if not test_email:
+            raise HTTPException(
+                status_code=500,
+                detail="SMTP_FROM_EMAIL 또는 SMTP_USERNAME 환경 변수가 설정되지 않았습니다."
+            )
+        
+        # 테스트 이메일 HTML 내용
+        html_content = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>테스트 이메일</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <!-- 헤더 -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">✅ 테스트 이메일</h1>
+            <p style="color: #ffffff; margin: 10px 0 0 0; opacity: 0.9;">SMTP 설정 확인</p>
+        </div>
+        
+        <!-- 본문 -->
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; line-height: 1.6; color: #333333; margin-bottom: 20px;">
+                <strong>축하합니다! 🎉</strong>
+            </p>
+            
+            <p style="font-size: 16px; line-height: 1.6; color: #333333; margin-bottom: 20px;">
+                SMTP 이메일 설정이 정상적으로 작동하고 있습니다.
+            </p>
+            
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 30px;">
+                <p style="font-size: 14px; color: #666666; margin: 0; line-height: 1.6;">
+                    ✅ <strong>SMTP 연결 성공</strong><br>
+                    ✅ <strong>이메일 발송 가능</strong><br>
+                    ✅ <strong>시스템 준비 완료</strong>
+                </p>
+            </div>
+            
+            <p style="font-size: 14px; line-height: 1.6; color: #999999; margin-top: 30px;">
+                이제 먹는샘물 위반 알림 시스템을 사용할 수 있습니다!
+            </p>
+        </div>
+        
+        <!-- 푸터 -->
+        <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+            <p style="font-size: 12px; color: #999999; margin: 0; line-height: 1.6;">
+                Spring Water Notification System<br>
+                테스트 이메일 - """ + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + """
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+        """
+        
+        # 이메일 발송
+        success = email_service.send_email(
+            to_email=test_email,
+            subject="🧪 [테스트] 먹는샘물 알림 시스템 - SMTP 설정 확인",
+            html_content=html_content
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "message": f"테스트 이메일을 {test_email}로 발송했습니다. 받은편지함을 확인해주세요.",
+                "email": test_email
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="이메일 발송에 실패했습니다. SMTP 설정을 확인해주세요."
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending test email: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"테스트 이메일 발송 중 오류가 발생했습니다: {str(e)}"
         )
 
 

@@ -53,7 +53,7 @@ docker-compose logs -f
 
 ```bash
 docker run -d \
-  -p 8000:8000 \
+  -p 8001:8001 \
   --name spring-water-notification \
   --env-file .env \
   spring-water-notification
@@ -63,7 +63,7 @@ docker run -d \
 
 ```bash
 # API 확인
-curl http://localhost:8000/
+curl http://localhost:8001/
 
 # 브라우저에서
 # http://localhost:8000/docs
@@ -111,27 +111,38 @@ docker-compose up -d --build
 
 ## 🌐 서버에 배포하기
 
-### 1. 서버에 파일 업로드
+### 1. 서버에서 Git Clone (권장)
 
 ```bash
-# 필요한 파일만 서버로 복사
-scp -r .env docker-compose.yml Dockerfile requirements.txt app/ user@your-server.com:/app/spring-water/
-```
-
-### 2. 서버에서 실행
-
-```bash
-# 서버 접속
+# 1. 서버 접속
 ssh user@your-server.com
 
-# 디렉토리 이동
-cd /app/spring-water
+# 2. Git Clone
+git clone https://github.com/your-username/Spring-water-notification-crawling.git
+cd Spring-water-notification-crawling
 
-# 실행
+# 3. .env 파일 생성 (서버용 설정)
+nano .env
+# .env.example을 참고해서 작성
+
+# 4. Docker로 실행
 docker-compose up -d
 
-# 로그 확인
+# 5. 로그 확인
 docker-compose logs -f
+```
+
+### 2. 업데이트 배포
+
+```bash
+# 서버에서
+cd Spring-water-notification-crawling
+
+# 최신 코드 가져오기
+git pull
+
+# 재빌드 & 재시작
+docker-compose up -d --build
 ```
 
 ### 3. 방화벽 설정 (필요시)

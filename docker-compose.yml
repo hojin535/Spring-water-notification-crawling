@@ -6,13 +6,10 @@ services:
     container_name: spring-water-notification
     restart: unless-stopped
     
-    ports:
-      - "8001:8001"
+    network_mode: "host"
     
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       # 로그 파일 영구 저장 (선택사항)
       - ./logs:/app/logs

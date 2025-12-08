@@ -631,10 +631,14 @@ async def confirm_subscription(
             logger.info(f"Found {len(current_violations)} violations in DB for welcome email")
             
             if current_violations:
-                # 위반 데이터를 dict로 변환
+                # 위반 데이터를 dict로 변환 + AI 설명 추가
                 violations_data = []
+                
+                # AI explainer 가져오기
+                explainer = get_explainer()
+                
                 for v in current_violations:
-                    violations_data.append({
+                    violation_dict = {
                         'id': v.id,
                         '업체명': v.업체명,
                         '제품명': v.제품명,
@@ -644,7 +648,23 @@ async def confirm_subscription(
                         '공표마감일자': v.공표마감일자,
                         '위반내용': v.위반내용,
                         '상세URL': v.상세URL
-                    })
+                    }
+                    
+                    # AI 설명 생성 (캐시 사용)
+                    try:
+                        explanation = await explainer.explain_violation(
+                            처분명=v.처분명,
+                            위반내용=v.위반내용,
+                            db=db
+                        )
+                        violation_dict['쉬운설명'] = explanation['easy_explanation']
+                        violation_dict['관련용어'] = explanation['related_terms']
+                    except Exception as ai_error:
+                        logger.warning(f"Failed to generate AI explanation for violation {v.id}: {ai_error}")
+                        violation_dict['쉬운설명'] = None
+                        violation_dict['관련용어'] = []
+                    
+                    violations_data.append(violation_dict)
                 
                 logger.info(f"Attempting to send violations email with {len(violations_data)} violations")
                 

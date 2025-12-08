@@ -271,6 +271,35 @@ class EmailService:
                             <strong style="color: #333;">위반내용:</strong><br>
                             <span style="color: #999; font-size: 13px;">{{ violation.위반내용[:200] }}{% if violation.위반내용|length > 200 %}...{% endif %}</span>
                         </p>
+                        
+                        {% if violation.쉬운설명 %}
+                        <div style="background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 15px; margin-top: 15px; border-radius: 4px;">
+                            <p style="margin: 0 0 5px 0; font-size: 13px; color: #0369a1; font-weight: bold;">
+                                💡 쉽게 설명하면
+                            </p>
+                            <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.6;">
+                                {{ violation.쉬운설명 }}
+                            </p>
+                        </div>
+                        {% endif %}
+                        
+                        {% if violation.관련용어 and violation.관련용어|length > 0 %}
+                        <div style="margin-top: 15px;">
+                            <p style="margin: 0 0 10px 0; font-size: 13px; color: #666; font-weight: bold;">
+                                📚 전문 용어 설명
+                            </p>
+                            {% for term in violation.관련용어[:3] %}
+                            <div style="background-color: #fefce8; padding: 10px; margin-bottom: 8px; border-radius: 4px; border-left: 3px solid #facc15;">
+                                <p style="margin: 0 0 5px 0; font-size: 12px; color: #854d0e; font-weight: bold;">
+                                    {{ term.term }}
+                                </p>
+                                <p style="margin: 0; font-size: 12px; color: #78716c; line-height: 1.5;">
+                                    {{ term.description }}
+                                </p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                     </div>
                     
                     {% if violation.상세URL %}

@@ -14,7 +14,7 @@ import re
 import os
 import secrets
 
-from app.models.violation import ViolationListItem, ViolationDetail
+from app.models.violation import ViolationListItem, ViolationDetail, BrandInfo
 from app.models.explain import ExplainRequest, ExplainResponse, TermExplanation
 from app.models.subscription import SubscribeRequest, SubscribeResponse, UnsubscribeResponse
 from app.crawlers.mcee_crawler import (
@@ -23,7 +23,7 @@ from app.crawlers.mcee_crawler import (
     get_violation_by_board_id
 )
 from app.database import get_db, init_db
-from app.db_models import ViolationRecord, TermMapping, ViolationExplanationCache, EmailSubscriber
+from app.db_models import ViolationRecord, TermMapping, ViolationExplanationCache, EmailSubscriber, WaterSource, Brand
 from app.services.ai_explainer import get_explainer
 from app.services.email_service import email_service
 from app.services.notification_service import notification_service
@@ -66,6 +66,38 @@ def generate_cache_key(처분명: str, 위반내용: str) -> str:
     import hashlib
     combined = f"{처분명}|{위반내용}"
     return hashlib.sha256(combined.encode('utf-8')).hexdigest()
+
+
+def normalize_company_name(name: str) -> str:
+    """
+    회사명을 정규화하여 매칭률을 높입니다.
+    (주), ㈜, (株), 주식회사 등을 제거하고 공백을 정리합니다.
+    
+    Args:
+        name: 원본 회사명
+        
+    Returns:
+        정규화된 회사명
+    """
+    if not name:
+        return ""
+    
+    # (주), ㈜, (株), 주식회사, (주식회사) 제거
+    normalized = name
+    normalized = normalized.replace("㈜", "")
+    normalized = normalized.replace("(주)", "")
+    normalized = normalized.replace("(株)", "")
+    normalized = normalized.replace("주식회사", "")
+    normalized = normalized.replace("(주식회사)", "")
+    
+    # 연속된 공백을 하나로
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    # 앞뒤 공백 제거
+    normalized = normalized.strip()
+    
+    return normalized
+
 
 
 def crawl_and_save_to_db():
@@ -219,8 +251,8 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
     
     # SSH 터널 종료
-    from app.database import stop_ssh_tunnel
-    stop_ssh_tunnel()
+    from app.database import close_ssh_tunnel
+    close_ssh_tunnel()
 
 
 # FastAPI 앱 초기화
@@ -309,6 +341,7 @@ async def get_violations_mapped(
     """
     위반 데이터를 DB에서 가져와 전문 용어를 쉬운 언어로 매핑하여 반환합니다.
     매핑은 term_mappings 테이블에 정의된 professional → easy 값을 사용합니다.
+    브랜드 정보도 함께 반환합니다.
     """
     # term mapping dict
     term_rows = db.query(TermMapping).all()
@@ -325,8 +358,60 @@ async def get_violations_mapped(
             text = text.replace(prof, easy)
         return text
     
+    # 브랜드 정보를 업체별로 캐싱
+    brand_cache = {}
+    
+    def get_brands_for_company(company_name: str):
+        """업체명으로 브랜드 목록 조회 (캐싱)"""
+        if company_name in brand_cache:
+            return brand_cache[company_name]
+        
+        # 회사명 정규화
+        normalized_name = normalize_company_name(company_name)
+        
+        # 정규화된 이름이 너무 짧으면 (2글자 이하) 검색하지 않음
+        if len(normalized_name) <= 2:
+            brand_cache[company_name] = []
+            return []
+        
+        # WaterSource 조회 - 정규화된 이름으로 검색
+        water_sources = db.query(WaterSource).all()
+        water_source = None
+        
+        # 정규화된 이름으로 매칭
+        for ws in water_sources:
+            normalized_ws_name = normalize_company_name(ws.취수원업체명)
+            if normalized_name in normalized_ws_name or normalized_ws_name in normalized_name:
+                water_source = ws
+                break
+        
+        brands_list = []
+        if water_source:
+            brands = db.query(Brand).filter(
+                Brand.water_source_id == water_source.id
+            ).all()
+            
+            brands_list = [
+                BrandInfo(
+                    id=brand.id,
+                    브랜드명=brand.브랜드명,
+                    데이터출처=brand.데이터출처,
+                    활성상태=brand.활성상태 if brand.활성상태 is not None else True
+                )
+                for brand in brands
+            ]
+            
+            if brands_list:
+                logger.info(f"Found {len(brands_list)} brands for company '{company_name}' (matched with '{water_source.취수원업체명}')")
+        
+        brand_cache[company_name] = brands_list
+        return brands_list
+    
     results = []
     for record in records:
+        # 브랜드 정보 조회
+        brands_list = get_brands_for_company(record.업체명)
+        
         # map each textual field
         mapped = ViolationDetail(
             품목=map_text(record.품목),
@@ -338,12 +423,14 @@ async def get_violations_mapped(
             처분명=map_text(record.처분명),
             처분기간=record.처분기간,
             위반내용=map_text(record.위반내용),
-            처분일자=record.처분일자
+            처분일자=record.처분일자,
+            브랜드목록=brands_list
         )
         results.append(mapped)
     
-    logger.info(f"GET /api/violations/mapped - Returned {len(results)} mapped records")
+    logger.info(f"GET /api/violations/mapped - Returned {len(results)} mapped records with brands")
     return results
+
 
 
 
@@ -353,13 +440,13 @@ async def get_violations_by_company(
     db: Session = Depends(get_db)
 ):
     """
-    특정 업체의 위반 내역 조회
+    특정 업체의 위반 내역 조회 (브랜드 정보 포함)
     
     Args:
         company_name: 업체명
         
     Returns:
-        List[ViolationDetail]: 해당 업체의 위반 목록
+        List[ViolationDetail]: 해당 업체의 위반 목록 (브랜드 정보 포함)
     """
     records = db.query(ViolationRecord).filter(
         ViolationRecord.업체명.like(f"%{company_name}%")
@@ -370,6 +457,44 @@ async def get_violations_by_company(
             status_code=404,
             detail=f"업체명 '{company_name}'에 해당하는 위반 기록을 찾을 수 없습니다"
         )
+    
+    # 해당 업체의 브랜드 조회 - 정규화된 이름으로 검색
+    normalized_name = normalize_company_name(company_name)
+    
+    # 정규화된 이름이 너무 짧으면 검색하지 않음
+    brands_list = []
+    if len(normalized_name) > 2:
+        water_sources = db.query(WaterSource).all()
+        water_source = None
+        
+        # 정규화된 이름으로 매칭
+        for ws in water_sources:
+            normalized_ws_name = normalize_company_name(ws.취수원업체명)
+            if normalized_name in normalized_ws_name or normalized_ws_name in normalized_name:
+                water_source = ws
+                break
+        
+        if water_source:
+            # WaterSource가 있으면, 관련 브랜드 목록 조회
+            brands = db.query(Brand).filter(
+                Brand.water_source_id == water_source.id
+            ).all()
+            
+            brands_list = [
+                BrandInfo(
+                    id=brand.id,
+                    브랜드명=brand.브랜드명,
+                    데이터출처=brand.데이터출처,
+                    활성상태=brand.활성상태 if brand.활성상태 is not None else True
+                )
+                for brand in brands
+            ]
+            
+            logger.info(f"Found {len(brands_list)} brands for company '{company_name}' (matched with '{water_source.취수원업체명}')")
+        else:
+            logger.info(f"No matching water source found for company '{company_name}'")
+    else:
+        logger.info(f"Company name too short after normalization: '{company_name}' -> '{normalized_name}'")
     
     results = []
     for record in records:
@@ -383,10 +508,11 @@ async def get_violations_by_company(
             처분명=record.처분명 or "",
             처분기간=record.처분기간 or "",
             위반내용=record.위반내용 or "",
-            처분일자=record.처분일자 or ""
+            처분일자=record.처분일자 or "",
+            브랜드목록=brands_list  # 모든 위반 레코드에 동일한 브랜드 목록 추가
         ))
     
-    logger.info(f"GET /api/violations/company/{company_name} - Found {len(results)} records")
+    logger.info(f"GET /api/violations/company/{company_name} - Found {len(results)} records with {len(brands_list)} brands")
     return results
 
 

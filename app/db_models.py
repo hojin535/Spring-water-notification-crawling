@@ -1,7 +1,7 @@
 """
 SQLAlchemy 데이터베이스 모델
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Date
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -154,3 +154,46 @@ class NotificationHistory(Base):
     
     def __repr__(self):
         return f"<NotificationHistory(subscriber_id={self.subscriber_id}, violation_id={self.violation_id})>"
+
+
+class WaterSource(Base):
+    """취수원 업체 테이블"""
+    __tablename__ = "water_sources"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    
+    # 취수원 정보
+    취수원업체명 = Column(String(200), nullable=False, unique=True, index=True, comment='취수원 업체명')
+    데이터출처 = Column(String(200), comment='데이터 출처')
+    최종확인일 = Column(Date, comment='최종 확인일')
+    
+    # 메타 정보
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    def __repr__(self):
+        return f"<WaterSource(취수원업체명={self.취수원업체명})>"
+
+
+class Brand(Base):
+    """브랜드 매핑 테이블"""
+    __tablename__ = "brands"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    
+    # 관계
+    water_source_id = Column(Integer, ForeignKey('water_sources.id', ondelete='CASCADE'), 
+                            nullable=False, index=True, comment='취수원 ID')
+    
+    # 브랜드 정보
+    브랜드명 = Column(String(200), nullable=False, index=True, comment='브랜드명')
+    데이터출처 = Column(String(200), comment='데이터 출처')
+    최종확인일 = Column(Date, comment='최종 확인일')
+    활성상태 = Column(Boolean, default=True, comment='활성 상태')
+    
+    # 메타 정보
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    def __repr__(self):
+        return f"<Brand(브랜드명={self.브랜드명}, water_source_id={self.water_source_id})>"

@@ -610,9 +610,58 @@ async def confirm_subscription(
         
         logger.info(f"Email subscription confirmed: {subscriber.email}")
         
+        # 첫 구독 시 환영 이메일 발송
+        try:
+            # 1. 환영 이메일 발송
+            welcome_sent = email_service.send_welcome_email(
+                email=subscriber.email,
+                unsubscribe_token=subscriber.unsubscribe_token
+            )
+            
+            if welcome_sent:
+                logger.info(f"Welcome email sent to {subscriber.email}")
+            else:
+                logger.warning(f"Failed to send welcome email to {subscriber.email}")
+            
+            # 2. 현재 DB에서 최신 위반 내용 조회 (최신 10개)
+            current_violations = db.query(ViolationRecord).order_by(
+                desc(ViolationRecord.처분일자)
+            ).limit(10).all()
+            
+            if current_violations:
+                # 위반 데이터를 dict로 변환
+                violations_data = []
+                for v in current_violations:
+                    violations_data.append({
+                        'id': v.id,
+                        '업체명': v.업체명,
+                        '제품명': v.제품명,
+                        '업체소재지': v.업체소재지,
+                        '처분명': v.처분명,
+                        '처분일자': v.처분일자,
+                        '공표마감일자': v.공표마감일자,
+                        '위반내용': v.위반내용,
+                        '상세URL': v.상세URL
+                    })
+                
+                # 위반 정보 이메일 발송 (환영 이메일과 별도)
+                violations_sent = email_service.send_violation_alert(
+                    email=subscriber.email,
+                    violations=violations_data,
+                    unsubscribe_token=subscriber.unsubscribe_token
+                )
+                
+                if violations_sent:
+                    logger.info(f"Current violations email sent to {subscriber.email} (total: {len(violations_data)} violations)")
+                else:
+                    logger.warning(f"Failed to send violations email to {subscriber.email}")
+        except Exception as email_error:
+            logger.error(f"Error sending welcome/violations emails: {email_error}", exc_info=True)
+            # 이메일 발송 실패해도 구독은 활성화되도록 함
+        
         return {
             "status": "success",
-            "message": "구독이 확인되었습니다! 새로운 위반이 발견되면 이메일로 알림을 보내드립니다.",
+            "message": "구독이 확인되었습니다! 환영 이메일과 현재 위반 정보를 발송했습니다.",
             "email": subscriber.email
         }
         

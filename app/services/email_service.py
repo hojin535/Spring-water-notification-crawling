@@ -88,7 +88,8 @@ class EmailService:
         
         html_content = self._get_subscription_confirmation_template(
             email=email,
-            confirmation_url=confirmation_url
+            confirmation_url=confirmation_url,
+            token=token
         )
         
         subject = "🔔 먹는샘물 위반 알림 구독 확인"
@@ -121,10 +122,32 @@ class EmailService:
         subject = f"⚠️ 새로운 먹는샘물 위반 {len(violations)}건 발견"
         return self.send_email(email, subject, html_content)
     
+    def send_welcome_email(self, email: str, unsubscribe_token: str) -> bool:
+        """
+        환영 이메일 발송 (구독 확인 감사)
+        
+        Args:
+            email: 구독자 이메일
+            unsubscribe_token: 구독 취소 토큰
+            
+        Returns:
+            bool: 발송 성공 여부
+        """
+        unsubscribe_url = f"{self.base_url}/api/unsubscribe/{unsubscribe_token}"
+        
+        html_content = self._get_welcome_email_template(
+            email=email,
+            unsubscribe_url=unsubscribe_url
+        )
+        
+        subject = "🎉 먹는샘물 위반 알림 구독을 환영합니다!"
+        return self.send_email(email, subject, html_content)
+    
     def _get_subscription_confirmation_template(
         self,
         email: str,
-        confirmation_url: str
+        confirmation_url: str,
+        token: str
     ) -> str:
         """구독 확인 이메일 템플릿"""
         template = Template("""
@@ -156,7 +179,7 @@ class EmailService:
             
             <!-- 버튼 -->
             <div style="text-align: center; margin: 40px 0;">
-                <a href="{{ confirmation_url }}" 
+                <a href="https://spring-water-notification-web.vercel.app/?confirm={{ token }}" 
                    style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; border-radius: 50px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
                     구독 확인하기
                 </a>
@@ -186,7 +209,8 @@ class EmailService:
         
         return template.render(
             email=email,
-            confirmation_url=confirmation_url
+            confirmation_url=confirmation_url,
+            token=token
         )
     
     def _get_violation_alert_template(
@@ -288,7 +312,86 @@ class EmailService:
             violations=violations,
             unsubscribe_url=unsubscribe_url
         )
+    
+    def _get_welcome_email_template(
+        self,
+        email: str,
+        unsubscribe_url: str
+    ) -> str:
+        """환영 이메일 템플릿"""
+        template = Template("""
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>환영합니다</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <!-- 헤더 -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">🎉 환영합니다!</h1>
+            <p style="color: #ffffff; margin: 10px 0 0 0; opacity: 0.9;">먹는샘물 위반 알림 서비스</p>
+        </div>
+        
+        <!-- 본문 -->
+        <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; line-height: 1.6; color: #333333; margin-bottom: 20px;">
+                안녕하세요,<br>
+                <strong>{{ email }}</strong> 님의 구독을 환영합니다!
+            </p>
+            
+            <p style="font-size: 16px; line-height: 1.6; color: #333333; margin-bottom: 30px;">
+                구독이 성공적으로 확인되었습니다. 이제부터 새로운 먹는샘물 위반 사례가 발견될 때마다 즉시 알림을 받으실 수 있습니다.
+            </p>
+            
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                <p style="font-size: 14px; color: #666666; margin: 0 0 15px 0; line-height: 1.6;">
+                    <strong style="color: #333;">📧 알림 내용:</strong>
+                </p>
+                <ul style="font-size: 14px; color: #666666; margin: 0; padding-left: 20px; line-height: 1.8;">
+                    <li>새로운 먹는샘물 위반 회사 정보</li>
+                    <li>처분명 및 위반 내용 상세</li>
+                    <li>공표 기간 정보</li>
+                    <li>관련 상세 링크</li>
+                </ul>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+                <p style="font-size: 14px; color: #ffffff; margin: 0; line-height: 1.6; text-align: center;">
+                    ✨ 곧 현재 등록된 위반 정보를 담은<br>
+                    별도의 이메일을 보내드리겠습니다!
+                </p>
+            </div>
+            
+            <p style="font-size: 14px; line-height: 1.6; color: #999999; margin-top: 30px;">
+                안전한 먹는물을 위해 항상 최신 정보를 확인하세요.<br>
+                감사합니다.
+            </p>
+        </div>
+        
+        <!-- 푸터 -->
+        <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+            <p style="font-size: 12px; color: #999999; margin: 0 0 10px 0;">
+                이 알림이 더 이상 필요하지 않으신가요?
+            </p>
+            <a href="{{ unsubscribe_url }}" 
+               style="font-size: 12px; color: #667eea; text-decoration: none;">
+                구독 취소하기
+            </a>
+        </div>
+    </div>
+</body>
+</html>
+        """)
+        
+        return template.render(
+            email=email,
+            unsubscribe_url=unsubscribe_url
+        )
 
 
 # 싱글톤 인스턴스
 email_service = EmailService()
+

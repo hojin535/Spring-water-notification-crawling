@@ -22,9 +22,8 @@ class ExplainRequest(BaseModel):
 class TermExplanation(BaseModel):
     """전문 용어 설명"""
     term: str = Field(..., description="전문 용어")
-    description: str = Field(..., description="쉬운 설명")
-    category: str = Field(..., description="카테고리 (영문)")
-    category_name: str = Field(..., description="카테고리 (한글)")
+    explanation: str = Field(..., description="쉬운 설명")
+    category: str = Field(..., description="카테고리 (한글)")
     risk_level: str = Field(..., description="위험도: high, medium, low")
 
 
@@ -43,9 +42,8 @@ class ExplainResponse(BaseModel):
                 "related_terms": [
                     {
                         "term": "총대장균군",
-                        "description": "물이나 음식물의 위생 상태를 나타내는 지표 세균",
-                        "category": "microorganism",
-                        "category_name": "미생물",
+                        "explanation": "물이나 음식물의 위생 상태를 나타내는 지표세균",
+                        "category": "세균/미생물",
                         "risk_level": "high"
                     }
                 ]

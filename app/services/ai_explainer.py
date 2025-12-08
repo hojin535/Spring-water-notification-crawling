@@ -68,12 +68,23 @@ class ViolationExplainer:
             
             logger.info(f"Cache HIT for key {cache_key[:8]}... (accessed {cache.access_count} times)")
             
-            # JSON 파싱
+            # JSON 파싱 및 키 이름 변환 (하위 호환성)
             related_terms = json.loads(cache.related_terms_json) if cache.related_terms_json else []
+            
+            # 이전 형식의 캐시 데이터를 새 형식으로 변환
+            normalized_terms = []
+            for term in related_terms:
+                normalized_term = {
+                    "term": term.get("term", ""),
+                    "explanation": term.get("explanation") or term.get("description", ""),  # 둘 다 지원
+                    "category": term.get("category") or term.get("category_name", ""),  # 둘 다 지원
+                    "risk_level": term.get("risk_level", "")
+                }
+                normalized_terms.append(normalized_term)
             
             return {
                 "easy_explanation": cache.easy_explanation,
-                "related_terms": related_terms,
+                "related_terms": normalized_terms,
                 "from_cache": True
             }
         
@@ -145,9 +156,8 @@ class ViolationExplainer:
             if term_obj.term in text:
                 found_terms.append({
                     "term": term_obj.term,
-                    "description": term_obj.description,
-                    "category": term_obj.category,
-                    "category_name": term_obj.category_name,
+                    "explanation": term_obj.description,  # 프론트엔드는 explanation 키를 기대함
+                    "category": term_obj.category_name,  # category_name을 category로 매핑
                     "risk_level": term_obj.risk_level
                 })
                 found_term_names.add(term_obj.term)
@@ -172,7 +182,7 @@ class ViolationExplainer:
         if related_terms:
             terms_context = "\n\n참고할 전문 용어:\n"
             for term in related_terms:
-                terms_context += f"- {term['term']}: {term['description']}\n"
+                terms_context += f"- {term['term']}: {term['explanation']}\n"
         
         prompt = f"""다음은 먹는샘물(생수) 업체의 행정처분 내용입니다. 일반인이 이해하기 쉽게 설명해주세요.
 

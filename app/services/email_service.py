@@ -179,7 +179,7 @@ class EmailService:
             
             <!-- 버튼 -->
             <div style="text-align: center; margin: 40px 0;">
-                <a href="https://spring-water-notification-web.vercel.app/?confirm={{ token }}" 
+                <a href="{{ confirmation_url }}" 
                    style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; border-radius: 50px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
                     구독 확인하기
                 </a>

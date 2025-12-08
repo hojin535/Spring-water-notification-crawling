@@ -628,6 +628,8 @@ async def confirm_subscription(
                 desc(ViolationRecord.처분일자)
             ).limit(10).all()
             
+            logger.info(f"Found {len(current_violations)} violations in DB for welcome email")
+            
             if current_violations:
                 # 위반 데이터를 dict로 변환
                 violations_data = []
@@ -644,6 +646,8 @@ async def confirm_subscription(
                         '상세URL': v.상세URL
                     })
                 
+                logger.info(f"Attempting to send violations email with {len(violations_data)} violations")
+                
                 # 위반 정보 이메일 발송 (환영 이메일과 별도)
                 violations_sent = email_service.send_violation_alert(
                     email=subscriber.email,
@@ -655,15 +659,18 @@ async def confirm_subscription(
                     logger.info(f"Current violations email sent to {subscriber.email} (total: {len(violations_data)} violations)")
                 else:
                     logger.warning(f"Failed to send violations email to {subscriber.email}")
+            else:
+                logger.warning(f"No violations found in DB - skipping violations email for {subscriber.email}")
         except Exception as email_error:
             logger.error(f"Error sending welcome/violations emails: {email_error}", exc_info=True)
             # 이메일 발송 실패해도 구독은 활성화되도록 함
         
-        return {
-            "status": "success",
-            "message": "구독이 확인되었습니다! 환영 이메일과 현재 위반 정보를 발송했습니다.",
-            "email": subscriber.email
-        }
+        # 구독 확인 성공 - Vercel 웹사이트로 리디렉션
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(
+            url="https://spring-water-notification-web.vercel.app/?subscribed=true",
+            status_code=302
+        )
         
     except HTTPException:
         raise

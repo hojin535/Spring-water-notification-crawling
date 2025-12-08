@@ -43,36 +43,68 @@ def get_chrome_options() -> Options:
 
 def create_driver() -> webdriver.Chrome:
     """Chrome WebDriver 생성"""
+    import os
+    import stat
+    
     try:
         chrome_options = get_chrome_options()
         
-        # ChromeDriver 설치 및 경로 가져오기
-        driver_path = ChromeDriverManager().install()
-        logger.info(f"ChromeDriver path: {driver_path}")
+        # 1. Docker 환경 변수에서 chromedriver 경로 확인
+        driver_path = os.getenv('CHROMEDRIVER_PATH')
         
-        # 실행 가능한 chromedriver 파일 찾기
-        import os
-        import stat
+        # 2. Docker에서 chromium 바이너리 경로 설정
+        chrome_binary = os.getenv('CHROME_BIN')
+        if chrome_binary and os.path.exists(chrome_binary):
+            chrome_options.binary_location = chrome_binary
+            logger.info(f"Using Chrome binary: {chrome_binary}")
         
-        if os.path.isdir(driver_path):
-            # 디렉토리인 경우 chromedriver 실행 파일 찾기
-            for root, dirs, files in os.walk(driver_path):
-                if 'chromedriver' in files:
-                    driver_path = os.path.join(root, 'chromedriver')
+        # 3. driver_path가 설정되어 있고 파일이 존재하면 사용 (Docker 환경)
+        if driver_path and os.path.exists(driver_path):
+            logger.info(f"Using system ChromeDriver from env: {driver_path}")
+        else:
+            # 4. 일반적인 시스템 경로 확인
+            system_paths = [
+                '/usr/bin/chromedriver',
+                '/usr/local/bin/chromedriver',
+            ]
+            
+            driver_path = None
+            for path in system_paths:
+                if os.path.exists(path):
+                    driver_path = path
+                    logger.info(f"Found system ChromeDriver: {driver_path}")
                     break
-        elif not os.path.basename(driver_path) == 'chromedriver':
-            # chromedriver가 아닌 파일인 경우 디렉토리에서 찾기
-            driver_dir = os.path.dirname(driver_path)
-            for root, dirs, files in os.walk(driver_dir):
-                if 'chromedriver' in files:
-                    driver_path = os.path.join(root, 'chromedriver')
-                    break
+            
+            # 5. 시스템에 없으면 ChromeDriverManager로 다운로드
+            if not driver_path:
+                logger.info("System ChromeDriver not found, downloading via ChromeDriverManager...")
+                driver_path = ChromeDriverManager().install()
+                logger.info(f"ChromeDriver path: {driver_path}")
+                
+                # 실행 가능한 chromedriver 파일 찾기
+                if os.path.isdir(driver_path):
+                    # 디렉토리인 경우 chromedriver 실행 파일 찾기
+                    for root, dirs, files in os.walk(driver_path):
+                        if 'chromedriver' in files:
+                            driver_path = os.path.join(root, 'chromedriver')
+                            break
+                elif not os.path.basename(driver_path) == 'chromedriver':
+                    # chromedriver가 아닌 파일인 경우 디렉토리에서 찾기
+                    driver_dir = os.path.dirname(driver_path)
+                    for root, dirs, files in os.walk(driver_dir):
+                        if 'chromedriver' in files:
+                            driver_path = os.path.join(root, 'chromedriver')
+                            break
         
-        # 실행 권한 부여
+        # 실행 권한 확인 및 부여
         if os.path.exists(driver_path):
             current_permissions = os.stat(driver_path).st_mode
-            os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            logger.info(f"Set execute permissions for ChromeDriver")
+            # 실행 권한이 없으면 추가
+            if not (current_permissions & stat.S_IXUSR):
+                os.chmod(driver_path, current_permissions | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                logger.info(f"Set execute permissions for ChromeDriver")
+        else:
+            raise FileNotFoundError(f"ChromeDriver not found at {driver_path}")
         
         logger.info(f"Using ChromeDriver: {driver_path}")
         service = Service(driver_path)

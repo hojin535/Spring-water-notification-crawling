@@ -52,7 +52,7 @@ logs/
 
 # Database
 *.db
-*.sqlite
+*.sqlited
 *.sqlite3
 
 # Temporary files

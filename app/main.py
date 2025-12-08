@@ -600,7 +600,7 @@ async def search_violations(
     if not unique_records:
         raise HTTPException(
             status_code=404,
-            detail=f"'{search_term}'에 대한 검색 결과가 없습니다"
+            detail="위반 내역이 없습니다"
         )
     
     # 4. 각 레코드에 브랜드 정보 추가

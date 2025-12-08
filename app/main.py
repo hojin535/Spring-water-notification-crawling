@@ -516,6 +516,162 @@ async def get_violations_by_company(
     return results
 
 
+@app.get("/api/violations/search", response_model=List[ViolationDetail])
+async def search_violations(
+    q: str,
+    db: Session = Depends(get_db)
+):
+    """
+    업체명 또는 브랜드명으로 위반 내역 통합 검색
+    
+    Args:
+        q: 검색어 (업체명 또는 브랜드명)
+        
+    Returns:
+        List[ViolationDetail]: 검색된 위반 목록 (브랜드 정보 포함)
+    """
+    logger.info(f"GET /api/violations/search - query: {q}")
+    
+    # 검색어가 비어있으면 에러
+    if not q or not q.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="검색어를 입력해주세요"
+        )
+    
+    search_term = q.strip()
+    
+    # 1. 업체명으로 검색
+    records_by_company = db.query(ViolationRecord).filter(
+        ViolationRecord.업체명.like(f"%{search_term}%")
+    ).all()
+    
+    logger.info(f"Found {len(records_by_company)} records by company name")
+    
+    # 2. 브랜드명으로 검색
+    brands = db.query(Brand).filter(
+        Brand.브랜드명.like(f"%{search_term}%")
+    ).all()
+    
+    logger.info(f"Found {len(brands)} brands matching search term")
+    
+    # 브랜드에서 찾은 취수원 업체명으로 위반 기록 검색
+    records_by_brand = []
+    water_source_names = set()
+    
+    for brand in brands:
+        water_source = db.query(WaterSource).filter(
+            WaterSource.id == brand.water_source_id
+        ).first()
+        
+        if water_source:
+            water_source_names.add(water_source.취수원업체명)
+            # 정규화된 이름으로 검색
+            normalized_ws_name = normalize_company_name(water_source.취수원업체명)
+            
+            # 해당 취수원 업체의 위반 기록 조회
+            ws_records = db.query(ViolationRecord).filter(
+                ViolationRecord.업체명.like(f"%{water_source.취수원업체명}%")
+            ).all()
+            
+            # 정규화된 이름으로도 한 번 더 검색
+            if normalized_ws_name and len(normalized_ws_name) > 2:
+                for record in db.query(ViolationRecord).all():
+                    normalized_record_name = normalize_company_name(record.업체명)
+                    if (normalized_ws_name in normalized_record_name or 
+                        normalized_record_name in normalized_ws_name):
+                        if record not in ws_records:
+                            ws_records.append(record)
+            
+            records_by_brand.extend(ws_records)
+            
+            logger.info(f"Brand '{brand.브랜드명}' -> WaterSource '{water_source.취수원업체명}' -> {len(ws_records)} violations")
+    
+    # 3. 중복 제거 (id 기준)
+    all_records = records_by_company + records_by_brand
+    unique_records_dict = {record.id: record for record in all_records}
+    unique_records = list(unique_records_dict.values())
+    
+    # 처분일자 기준 정렬
+    unique_records.sort(key=lambda x: x.처분일자 or "", reverse=True)
+    
+    logger.info(f"Total unique records after deduplication: {len(unique_records)}")
+    
+    if not unique_records:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{search_term}'에 대한 검색 결과가 없습니다"
+        )
+    
+    # 4. 각 레코드에 브랜드 정보 추가
+    results = []
+    brand_cache = {}
+    
+    def get_brands_for_company(company_name: str):
+        """업체명으로 브랜드 목록 조회 (캐싱)"""
+        if company_name in brand_cache:
+            return brand_cache[company_name]
+        
+        # 회사명 정규화
+        normalized_name = normalize_company_name(company_name)
+        
+        # 정규화된 이름이 너무 짧으면 검색하지 않음
+        if len(normalized_name) <= 2:
+            brand_cache[company_name] = []
+            return []
+        
+        # WaterSource 조회
+        water_sources = db.query(WaterSource).all()
+        water_source = None
+        
+        # 정규화된 이름으로 매칭
+        for ws in water_sources:
+            normalized_ws_name = normalize_company_name(ws.취수원업체명)
+            if normalized_name in normalized_ws_name or normalized_ws_name in normalized_name:
+                water_source = ws
+                break
+        
+        brands_list = []
+        if water_source:
+            brands = db.query(Brand).filter(
+                Brand.water_source_id == water_source.id
+            ).all()
+            
+            brands_list = [
+                BrandInfo(
+                    id=brand.id,
+                    브랜드명=brand.브랜드명,
+                    데이터출처=brand.데이터출처,
+                    활성상태=brand.활성상태 if brand.활성상태 is not None else True
+                )
+                for brand in brands
+            ]
+        
+        brand_cache[company_name] = brands_list
+        return brands_list
+    
+    for record in unique_records:
+        brands_list = get_brands_for_company(record.업체명)
+        
+        results.append(ViolationDetail(
+            품목=record.품목 or "",
+            업체명=record.업체명 or "",
+            업체소재지=record.업체소재지 or "",
+            제품명=record.제품명 or "",
+            업종명=record.업종명 or "",
+            공표마감일자=record.공표마감일자 or "",
+            처분명=record.처분명 or "",
+            처분기간=record.처분기간 or "",
+            위반내용=record.위반내용 or "",
+            처분일자=record.처분일자 or "",
+            브랜드목록=brands_list
+        ))
+    
+    logger.info(f"GET /api/violations/search - Returning {len(results)} records for query '{search_term}'")
+    return results
+
+
+
 @app.post("/api/crawl/manual")
 async def manual_crawl():
     """

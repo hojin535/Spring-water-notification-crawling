@@ -257,6 +257,21 @@ class EmailService:
                         </div>
                     </div>
                     
+                    {% if violation.브랜드목록 and violation.브랜드목록|length > 0 %}
+                    <div style="background-color: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; margin: 15px 0; border-radius: 4px;">
+                        <p style="margin: 0 0 8px 0; font-size: 13px; color: #92400e; font-weight: bold;">
+                            🏷️ 해당 업체의 브랜드
+                        </p>
+                        <div style="margin-top: 8px;">
+                            {% for brand in violation.브랜드목록 %}
+                            <span style="display: inline-block; background-color: #fbbf24; color: #78350f; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; margin: 4px 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                {{ brand.브랜드명 }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
                     <div style="background-color: #ffffff; padding: 15px; border-radius: 4px; margin-top: 15px;">
                         <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
                             <strong style="color: #333;">처분명:</strong> {{ violation.처분명 }}
@@ -288,10 +303,10 @@ class EmailService:
                             <p style="margin: 0 0 10px 0; font-size: 13px; color: #666; font-weight: bold;">
                                 📚 전문 용어 설명
                             </p>
-                            {% for term in violation.관련용어[:3] %}
+                            {% for term in violation.관련용어 %}
                             <div style="background-color: #fefce8; padding: 10px; margin-bottom: 8px; border-radius: 4px; border-left: 3px solid #facc15;">
                                 <p style="margin: 0 0 5px 0; font-size: 12px; color: #854d0e; font-weight: bold;">
-                                    {{ term.term }}
+                                    {{ term.term }}{% if term.category %} <span style="font-size: 10px; color: #a16207; background-color: #fef3c7; padding: 2px 6px; border-radius: 8px;">[{{ term.category }}]</span>{% endif %}
                                 </p>
                                 <p style="margin: 0; font-size: 12px; color: #78716c; line-height: 1.5;">
                                     {{ term.description }}

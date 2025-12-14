@@ -932,6 +932,11 @@ async def confirm_subscription(
                         '상세URL': v.상세URL
                     }
                     
+                    # 브랜드 및 취수원 정보 조회
+                    brand_data = notification_service._get_brands_for_company(v.업체명, db)
+                    violation_dict['취수원정보'] = brand_data['취수원정보']
+                    violation_dict['브랜드목록'] = brand_data['브랜드목록']
+                    
                     # AI 설명 생성 (캐시 사용)
                     try:
                         explanation = await explainer.explain_violation(

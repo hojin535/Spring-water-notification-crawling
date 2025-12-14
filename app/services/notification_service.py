@@ -106,21 +106,25 @@ class NotificationService:
         
         return normalized
     
-    def _get_brands_for_company(self, company_name: str, db: Session) -> List[Dict]:
+    def _get_brands_for_company(self, company_name: str, db: Session) -> Dict:
         """
-        업체명으로 브랜드 목록 조회
+        업체명으로 브랜드 목록 및 취수원(OEM) 정보 조회
         
         Args:
             company_name: 업체명
             db: 데이터베이스 세션
             
         Returns:
-            브랜드 정보 리스트
+            취수원 정보와 브랜드 목록을 포함한 딕셔너리
+            {
+                '취수원정보': {...},
+                '브랜드목록': [...]
+            }
         """
         normalized_name = self._normalize_company_name(company_name)
         
         if len(normalized_name) <= 2:
-            return []
+            return {'취수원정보': None, '브랜드목록': []}
         
         # WaterSource 조회
         water_sources = db.query(WaterSource).all()
@@ -133,7 +137,15 @@ class NotificationService:
                 break
         
         if not water_source:
-            return []
+            return {'취수원정보': None, '브랜드목록': []}
+        
+        # 취수원(OEM) 정보
+        water_source_info = {
+            '취수원업체명': water_source.취수원업체명,
+            '취수원소재지': water_source.취수원소재지,
+            '취수원종류': water_source.취수원종류,
+            '데이터출처': water_source.데이터출처
+        }
         
         # 브랜드 목록 조회
         brands = db.query(Brand).filter(
@@ -146,14 +158,16 @@ class NotificationService:
             brands_list.append({
                 'id': brand.id,
                 '브랜드명': brand.브랜드명,
+                '제조사': brand.제조사,
+                '대표제품명': brand.대표제품명,
                 '데이터출처': brand.데이터출처,
                 '활성상태': brand.활성상태
             })
         
         if brands_list:
-            logger.info(f"Found {len(brands_list)} brands for company '{company_name}'")
+            logger.info(f"Found {len(brands_list)} brands for company '{company_name}' (OEM: {water_source.취수원업체명})")
         
-        return brands_list
+        return {'취수원정보': water_source_info, '브랜드목록': brands_list}
     
     async def _get_ai_explanation(self, 처분명: str, 위반내용: str, db: Session) -> Dict:
         """
@@ -219,11 +233,11 @@ class NotificationService:
             logger.info("No violations or subscribers to notify")
             return stats
         
-        # 위반 데이터를 dict로 변환 (브랜드 정보 및 AI 설명 추가)
+        # 위반 데이터를 dict로 변환 (취수원, 브랜드 정보 및 AI 설명 추가)
         violations_data = []
         for v in violations:
-            # 브랜드 정보 조회
-            brands_list = self._get_brands_for_company(v.업체명, db)
+            # 브랜드 및 취수원 정보 조회
+            brand_data = self._get_brands_for_company(v.업체명, db)
             
             # AI 설명 조회
             ai_explanation = await self._get_ai_explanation(v.처분명, v.위반내용, db)
@@ -238,7 +252,8 @@ class NotificationService:
                 '공표마감일자': v.공표마감일자,
                 '위반내용': v.위반내용,
                 '상세URL': v.상세URL,
-                '브랜드목록': brands_list,
+                '취수원정보': brand_data['취수원정보'],
+                '브랜드목록': brand_data['브랜드목록'],
                 '쉬운설명': ai_explanation['쉬운설명'],
                 '관련용어': ai_explanation['관련용어']
             })

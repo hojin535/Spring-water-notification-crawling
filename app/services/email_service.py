@@ -189,7 +189,9 @@ class EmailService:
                 <p style="font-size: 14px; color: #666666; margin: 0; line-height: 1.6;">
                     💡 <strong>알림 내용:</strong><br>
                     • 새로운 먹는샘물 위반 회사 정보<br>
+                    • 취수원(OEM) 및 브랜드 매핑 정보<br>
                     • 처분명 및 위반 내용<br>
+                    • AI 쉬운 설명 및 전문용어 해설<br>
                     • 공표 기간 정보
                 </p>
             </div>
@@ -257,16 +259,58 @@ class EmailService:
                         </div>
                     </div>
                     
+                    {% if violation.취수원정보 %}
+                    <div style="background-color: #e0f2fe; border-left: 3px solid #0284c7; padding: 12px; margin: 15px 0; border-radius: 4px;">
+                        <p style="margin: 0 0 8px 0; font-size: 13px; color: #075985; font-weight: bold;">
+                            🏭 취수원 정보 (OEM)
+                        </p>
+                        <div style="font-size: 12px; color: #0c4a6e; line-height: 1.6;">
+                            <div style="margin-bottom: 4px;">
+                                <strong>업체명:</strong> {{ violation.취수원정보.취수원업체명 }}
+                            </div>
+                            {% if violation.취수원정보.취수원소재지 %}
+                            <div style="margin-bottom: 4px;">
+                                <strong>소재지:</strong> {{ violation.취수원정보.취수원소재지 }}
+                            </div>
+                            {% endif %}
+                            {% if violation.취수원정보.취수원종류 %}
+                            <div style="margin-bottom: 4px;">
+                                <strong>취수원 종류:</strong> {{ violation.취수원정보.취수원종류 }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
                     {% if violation.브랜드목록 and violation.브랜드목록|length > 0 %}
                     <div style="background-color: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; margin: 15px 0; border-radius: 4px;">
                         <p style="margin: 0 0 8px 0; font-size: 13px; color: #92400e; font-weight: bold;">
-                            🏷️ 해당 업체의 브랜드
+                            🏷️ 해당 업체의 브랜드 ({{ violation.브랜드목록|length }}개)
                         </p>
                         <div style="margin-top: 8px;">
                             {% for brand in violation.브랜드목록 %}
-                            <span style="display: inline-block; background-color: #fbbf24; color: #78350f; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold; margin: 4px 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                                {{ brand.브랜드명 }}
-                            </span>
+                            <div style="background-color: #fff; margin-bottom: 8px; padding: 8px; border-radius: 4px; border: 1px solid #fcd34d;">
+                                <div style="margin-bottom: 4px;">
+                                    <span style="display: inline-block; background-color: #fbbf24; color: #78350f; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-right: 6px;">
+                                        {{ brand.브랜드명 }}
+                                    </span>
+                                    {% if brand.활성상태 %}
+                                    <span style="display: inline-block; background-color: #86efac; color: #166534; padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: bold;">
+                                        활성
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                {% if brand.제조사 %}
+                                <div style="font-size: 11px; color: #78716c; margin-top: 4px;">
+                                    <strong>제조사:</strong> {{ brand.제조사 }}
+                                </div>
+                                {% endif %}
+                                {% if brand.대표제품명 %}
+                                <div style="font-size: 11px; color: #78716c; margin-top: 2px;">
+                                    <strong>대표제품:</strong> {{ brand.대표제품명 }}
+                                </div>
+                                {% endif %}
+                            </div>
                             {% endfor %}
                         </div>
                     </div>
@@ -396,7 +440,9 @@ class EmailService:
                 </p>
                 <ul style="font-size: 14px; color: #666666; margin: 0; padding-left: 20px; line-height: 1.8;">
                     <li>새로운 먹는샘물 위반 회사 정보</li>
+                    <li>취수원(OEM) 및 브랜드 매핑 정보</li>
                     <li>처분명 및 위반 내용 상세</li>
+                    <li>AI가 생성한 쉬운 설명과 전문용어 해설</li>
                     <li>공표 기간 정보</li>
                     <li>관련 상세 링크</li>
                 </ul>

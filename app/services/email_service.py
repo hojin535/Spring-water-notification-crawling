@@ -268,16 +268,6 @@ class EmailService:
                             <div style="margin-bottom: 4px;">
                                 <strong>업체명:</strong> {{ violation.취수원정보.취수원업체명 }}
                             </div>
-                            {% if violation.취수원정보.취수원소재지 %}
-                            <div style="margin-bottom: 4px;">
-                                <strong>소재지:</strong> {{ violation.취수원정보.취수원소재지 }}
-                            </div>
-                            {% endif %}
-                            {% if violation.취수원정보.취수원종류 %}
-                            <div style="margin-bottom: 4px;">
-                                <strong>취수원 종류:</strong> {{ violation.취수원정보.취수원종류 }}
-                            </div>
-                            {% endif %}
                         </div>
                     </div>
                     {% endif %}
@@ -300,16 +290,6 @@ class EmailService:
                                     </span>
                                     {% endif %}
                                 </div>
-                                {% if brand.제조사 %}
-                                <div style="font-size: 11px; color: #78716c; margin-top: 4px;">
-                                    <strong>제조사:</strong> {{ brand.제조사 }}
-                                </div>
-                                {% endif %}
-                                {% if brand.대표제품명 %}
-                                <div style="font-size: 11px; color: #78716c; margin-top: 2px;">
-                                    <strong>대표제품:</strong> {{ brand.대표제품명 }}
-                                </div>
-                                {% endif %}
                             </div>
                             {% endfor %}
                         </div>

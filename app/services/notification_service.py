@@ -142,8 +142,6 @@ class NotificationService:
         # 취수원(OEM) 정보
         water_source_info = {
             '취수원업체명': water_source.취수원업체명,
-            '취수원소재지': water_source.취수원소재지,
-            '취수원종류': water_source.취수원종류,
             '데이터출처': water_source.데이터출처
         }
         
@@ -157,8 +155,6 @@ class NotificationService:
             brands_list.append({
                 'id': brand.id,
                 '브랜드명': brand.브랜드명,
-                '제조사': brand.제조사,
-                '대표제품명': brand.대표제품명,
                 '데이터출처': brand.데이터출처,
                 '활성상태': brand.활성상태
             })

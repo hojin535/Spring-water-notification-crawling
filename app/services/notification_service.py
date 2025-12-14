@@ -147,10 +147,9 @@ class NotificationService:
             '데이터출처': water_source.데이터출처
         }
         
-        # 브랜드 목록 조회
+        # 브랜드 목록 조회 (활성/비활성 모두 포함)
         brands = db.query(Brand).filter(
-            Brand.water_source_id == water_source.id,
-            Brand.활성상태 == True
+            Brand.water_source_id == water_source.id
         ).all()
         
         brands_list = []

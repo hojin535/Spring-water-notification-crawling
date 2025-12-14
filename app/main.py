@@ -1144,6 +1144,88 @@ async def send_test_email():
         )
 
 
+@app.post("/api/test-email/subscriber/{subscriber_id}")
+async def send_test_email_to_subscriber(
+    subscriber_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    특정 구독자에게 실제 위반 데이터를 포함한 테스트 이메일 발송
+    
+    Args:
+        subscriber_id: 구독자 ID (email_subscribers 테이블의 id)
+        
+    Returns:
+        발송 결과
+    """
+    logger.info(f"POST /api/test-email/subscriber/{subscriber_id} - Test email request")
+    
+    try:
+        # 1. 구독자 조회
+        subscriber = db.query(EmailSubscriber).filter(
+            EmailSubscriber.id == subscriber_id
+        ).first()
+        
+        if not subscriber:
+            raise HTTPException(
+                status_code=404,
+                detail=f"구독자 ID {subscriber_id}를 찾을 수 없습니다."
+            )
+        
+        logger.info(f"Found subscriber: {subscriber.email}")
+        
+        # 2. 최근 위반 데이터 조회 (3건)
+        violations = db.query(ViolationRecord).order_by(
+            desc(ViolationRecord.처분일자)
+        ).limit(3).all()
+        
+        if not violations:
+            raise HTTPException(
+                status_code=404,
+                detail="위반 데이터가 없습니다. 먼저 크롤링을 실행해주세요."
+            )
+        
+        logger.info(f"Found {len(violations)} violation records")
+        
+        # 3. 테스트 이메일 발송 (비동기)
+        import asyncio
+        
+        stats = await notification_service.send_notifications_async(
+            db=db,
+            violations=violations,
+            subscribers=[subscriber]
+        )
+        
+        logger.info(f"Email sending stats: {stats}")
+        
+        if stats['success'] > 0:
+            return {
+                "status": "success",
+                "message": f"테스트 이메일을 {subscriber.email}로 발송했습니다.",
+                "subscriber": {
+                    "id": subscriber.id,
+                    "email": subscriber.email,
+                    "is_active": subscriber.is_active
+                },
+                "violations_count": len(violations),
+                "stats": stats
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="이메일 발송에 실패했습니다. SMTP 설정을 확인해주세요."
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending test email to subscriber: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"테스트 이메일 발송 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
 
 if __name__ == "__main__":
     import uvicorn
